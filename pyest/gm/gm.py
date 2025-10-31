@@ -636,6 +636,7 @@ class GaussianMixture(object):
         self.set_m(m)
         self._Seig = Seig  # directly write Seig here as to not overwrite P
         self._set_cov(cov, cov_type)
+        self.test="test"
 
         # check that equal numbers of weights, means, and covariances are provided
         if len(self.w) != len(self.m) or len(self.w) != len(self._cov):
