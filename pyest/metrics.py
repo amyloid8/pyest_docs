@@ -2,6 +2,7 @@ import numpy as np
 import pyest.gm as pygm
 from scipy.linalg import solve_triangular
 from scipy.integrate import dblquad
+from scipy.stats import multivariate_normal
 
 
 def l2_dist(p1, p2):
@@ -191,3 +192,70 @@ def normalized_integral_squared_error_2d(p1, p2, a, b, c, d, epsabs=1.49e-2, eps
     nise = ise/(int_p1_sq + int_p2_sq)
 
     return nise, ise, err
+
+def log_likelihood(gmm, X, covariance_type="full"):
+    ''' Computes the log likelihood score of this GMM
+    Parameters
+    ----------
+    gmm : PyEst Gaussian Mixture
+    X : ndarray of data points
+    covariance_type : (optional) default="full"
+
+    Returns
+    ----------
+    Total log-likelihood of the dataset X under the GMM
+    '''
+    N,d = X.shape
+    K = len(gmm)
+    def get_cov(gmm, K, covariance_type):
+        if covariance_type == 'full':
+            return gmm.P[k]
+        elif covariance_type == 'tied':
+            return gmm.P
+        elif covariance_type == 'diag':
+            return np.diag(gmm.P[k])
+        elif covariance_type == 'spherical':
+            return np.eye(d) * gmm.P[k]
+        else:
+            raise ValueError(f"Invalid covariance_type: {covariance_type}")
+
+    log_likelihoods = np.zeros((N, K))
+    for k in range(K):
+        cov = get_cov(gmm, k, covariance_type)
+        log_likelihoods[:, k] = np.log(gmm.w[k]) + multivariate_normal.logpdf(X, mean=gmm.m[k], cov=cov)
+    return np.sum(np.log(np.sum(np.exp(log_likelihoods), axis=1)))
+
+
+def bic(gmm, X, covariance_type="full"):
+    ''' Compute the Bayesian Information Criterion score for this GMM
+    Parameters
+    ----------
+    gmm : PyEst Gaussian Mixture
+    X : ndarray of data points.
+    covariance_type : (optional) default "full"
+
+    Returns
+    -------
+    bic : float
+        The Bayesian Information Criterion score.
+    '''
+    def free_params(covariance_type, d, K):
+        if covariance_type == 'full':
+            n_cov_params = K * d * (d + 1) / 2
+        elif covariance_type == 'tied':
+            n_cov_params = d * (d + 1) / 2
+        elif covariance_type == 'diag':
+            n_cov_params = K * d
+        elif covariance_type == 'spherical':
+            n_cov_params = K
+        else:
+            raise ValueError(f"Invalid covariance_type: {covariance_type}")
+        n_mean_params = K * d
+        n_weight_params = K - 1
+        return n_cov_params + n_mean_params + n_weight_params
+
+    N, d = X.shape
+    K = len(gmm)
+    ll = log_likelihood(gmm, X)
+    n_params = free_params(covariance_type, d, K)
+    return -2 * ll + n_params * np.log(N)
