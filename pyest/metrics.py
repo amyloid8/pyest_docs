@@ -225,6 +225,20 @@ def log_likelihood(gmm, X, covariance_type="full"):
         log_likelihoods[:, k] = np.log(gmm.w[k]) + multivariate_normal.logpdf(X, mean=gmm.m[k], cov=cov)
     return np.sum(np.log(np.sum(np.exp(log_likelihoods), axis=1)))
 
+def _free_params(covariance_type, d, K):
+    if covariance_type == 'full':
+        n_cov_params = K * d * (d + 1) / 2
+    elif covariance_type == 'tied':
+        n_cov_params = d * (d + 1) / 2
+    elif covariance_type == 'diag':
+        n_cov_params = K * d
+    elif covariance_type == 'spherical':
+        n_cov_params = K
+    else:
+        raise ValueError(f"Invalid covariance_type: {covariance_type}")
+    n_mean_params = K * d
+    n_weight_params = K - 1
+    return n_cov_params + n_mean_params + n_weight_params
 
 def bic(gmm, X, covariance_type="full"):
     ''' Compute the Bayesian Information Criterion score for this GMM
@@ -239,23 +253,27 @@ def bic(gmm, X, covariance_type="full"):
     bic : float
         The Bayesian Information Criterion score.
     '''
-    def free_params(covariance_type, d, K):
-        if covariance_type == 'full':
-            n_cov_params = K * d * (d + 1) / 2
-        elif covariance_type == 'tied':
-            n_cov_params = d * (d + 1) / 2
-        elif covariance_type == 'diag':
-            n_cov_params = K * d
-        elif covariance_type == 'spherical':
-            n_cov_params = K
-        else:
-            raise ValueError(f"Invalid covariance_type: {covariance_type}")
-        n_mean_params = K * d
-        n_weight_params = K - 1
-        return n_cov_params + n_mean_params + n_weight_params
-
     N, d = X.shape
     K = len(gmm)
     ll = log_likelihood(gmm, X)
-    n_params = free_params(covariance_type, d, K)
+    n_params = _free_params(covariance_type, d, K)
     return -2 * ll + n_params * np.log(N)
+
+def aic(gmm, X, covariance_type="full"):
+    ''' Compute the Bayesian Information Criterion score for this GMM
+    Parameters
+    ----------
+    gmm : PyEst Gaussian Mixture
+    X : ndarray of data points.
+    covariance_type : (optional) default "full"
+
+    Returns
+    -------
+    aic : float
+        The Akaike Information Criterion score.
+    '''
+    N, d = X.shape
+    K = len(gmm)
+    ll = log_likelihood(gmm, X)
+    n_params = _free_params(covariance_type, d, K)
+    return 2 * n_params - 2 * ll
