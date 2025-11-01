@@ -207,7 +207,7 @@ def log_likelihood(gmm, X, covariance_type="full"):
     '''
     N,d = X.shape
     K = len(gmm)
-    def get_cov(gmm, K, covariance_type):
+    def get_cov(gmm, k, covariance_type):
         if covariance_type == 'full':
             return gmm.P[k]
         elif covariance_type == 'tied':
@@ -259,7 +259,7 @@ def bic(gmm, X, covariance_type="full"):
     n_params = _free_params(covariance_type, d, K)
     return -2 * ll + n_params * np.log(N)
 
-def aic(gmm, X, covariance_type="full"):
+def aic(gmm, X):
     ''' Compute the Bayesian Information Criterion score for this GMM
     Parameters
     ----------
@@ -275,5 +275,5 @@ def aic(gmm, X, covariance_type="full"):
     N, d = X.shape
     K = len(gmm)
     ll = log_likelihood(gmm, X)
-    n_params = _free_params(covariance_type, d, K)
+    n_params = _free_params(gmm._cov_type, d, K)
     return 2 * n_params - 2 * ll

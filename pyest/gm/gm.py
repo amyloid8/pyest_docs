@@ -1,5 +1,6 @@
 import os
 from .. utils import protected_cached_property
+from .. metrics import log_likelihood
 
 import cvxopt
 import jax
@@ -741,6 +742,7 @@ class GaussianMixture(object):
         self._set_cov(P, 'full')
 
     def _set_cov(self, cov, cov_type):
+        self._cov_type = cov_type
         if isinstance(np.atleast_1d(cov)[0], Covariance):
             self._cov = np.atleast_1d(cov)
             return
@@ -978,6 +980,62 @@ class GaussianMixture(object):
         else:
             comp_idx = [np.where(rand() < cum_weights)[0][0] for i in range(size)]
             return _squeeze_output(np.array([self.m[sort_idx][c] + S_sorted[c]@randn(self._msize) for c in comp_idx]))
+
+    def _e_step(self, X):
+        N = X.shape[0]
+        K = self.get_size()
+        resp = np.zeros((N, K))
+        likelihood = np.zeros((N, K))
+        for k in range(K):
+            likelihood[:, k] = self.w[k] * multivariate_normal.pdf(X, self.m[k], self.P[k])
+        for k in range(K):
+            resp[:, k] = likelihood[:, k] / np.sum(likelihood, axis=1)
+        return resp
+
+    def _m_step(self, X, resp):
+        # Compute Nk (effective number of samples per component)
+        Nk = np.sum(resp, axis=0)  # Shape: (K,)
+        # Compute means
+        new_m = (resp.T @ X) / Nk[:, np.newaxis]  # Shape: (K, d)
+        # Compute centered data for each component
+        diff = X[:, np.newaxis, :] - new_m  # Shape: (N, K, d)
+        # Compute outer products for each data point and component
+        outer = np.einsum("nkd,nke->nkde", diff, diff)  # Shape: (N, K, d, d)
+        # Weight outer products by responsibilities
+        weighted_outer = resp[:, :, np.newaxis, np.newaxis] * outer  # (N, K, d, d)
+        # Sum over all data points for each component and normalize
+        new_P = (
+            np.sum(weighted_outer, axis=0) / Nk[:, np.newaxis, np.newaxis]
+        )  # (K, d, d)
+        # new weights
+        new_w = Nk / X.shape[0]  # Shape: (K,)
+        print(new_m)
+
+        self.set_m(new_m)
+        self.set_w(new_w)
+        self._set_cov(new_P, self._cov_type)
+
+    def fit(self, X, max_iter=100, tol=1e-3):
+        ''' Uses Expectation-Maximization algorithm to fit GMM to a dataset X
+        '''
+        N = X.shape[0]  # Number of rows
+        D = X.shape[1]  # Number of columns (dimension of data)
+        prev_ll = log_likelihood(self, X)
+        for i in range(max_iter):
+            # E-step
+            resp = self._e_step(X)
+            # M-step
+            self._m_step(X, resp)
+            # Computing log-likelihood
+            curr_ll = log_likelihood(self, X)
+            # Return with the current GMM if converge
+            if abs(curr_ll-prev_ll) < tol:
+                return
+            # Update
+            prev_ll = curr_ll
+
+        print(f"EM did not converge after {max_iter} iterations")
+
 
     size = property(get_size, _not_allowed)
     w = property(get_w, set_w)
